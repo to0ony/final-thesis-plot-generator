@@ -16,3 +16,32 @@ Studenti trebaju odabrati temu za koju će neuronska mreža ili veliki jezični 
 - [GitHub repo - minGPT](https://github.com/karpathy/minGPT)
 - [Hugging Face](https://huggingface.co/)
 - [PyTorch](https://pytorch.org/)
+
+# Instrukcije
+
+## Kreiranje Virtual Environment
+
+```bash
+# Kreiraj novi environment
+python -m venv plot-generator-env
+
+# Aktiviraj environment (Windows)
+plot-generator-env\Scripts\activate
+
+# Activiraj environment (Linux/Mac)
+source plot-generator-env/bin/activate
+
+# Instaliraj dependencies
+pip install -r requirements.txt
+```
+
+## Pokretanje Projekta
+
+1. Aktiviraj environment
+2. Pokreni data preprocessing: `jupyter notebook prepare.ipynb`
+3. Pokreni treniranje: `python train.py`
+4. Generiraj tekst: `python generate.py`
+
+## Dataset
+
+[Plotovi filmova](https://drive.google.com/file/d/1pPSv1I3qUXvgfBfIyO_Lh7FXuwUTeKQD/)
