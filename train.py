@@ -8,29 +8,23 @@ from torch.nn.utils import clip_grad_norm_
 from torch.amp import autocast, GradScaler
 from mingpt.model import GPT
 import tiktoken
+from config import *
 
 # -------------------------
-# Hiperparametri
+# Hiperparametri 
 # -------------------------
-batch_size = 16
-gradient_accumulation_steps = 4
-block_size = 256
-max_iters = 8000
-eval_interval = 400
-learning_rate = 3e-4
-eval_iters = 50
-n_embd = 768
-n_layer = 12      
-n_head = 12
-max_grad_norm = 1.0
+batch_size = BATCH_SIZE
+gradient_accumulation_steps = GRADIENT_ACCUMULATION_STEPS
+block_size = BLOCK_SIZE
+max_iters = MAX_ITERS
+eval_interval = EVAL_INTERVAL
+learning_rate = LEARNING_RATE
+eval_iters = EVAL_ITERS
+max_grad_norm = MAX_GRAD_NORM
 
 # CUDA provjera
-if torch.cuda.is_available():
-    device = 'cuda'
-    print(f"Koristi GPU: {torch.cuda.get_device_name(0)}")
-else:
-    device = 'cpu'
-    print("GPU nije dostupan - koristi se CPU")
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print("GPU: " + torch.cuda.get_device_name(0)) if device == 'cuda' else print("GPU nije dostupan - koristi se CPU")
 
 # -------------------------
 # Vokabular
@@ -47,8 +41,8 @@ def decode(tokens):
 # -------------------------
 # Podaci
 # -------------------------
-train_data = np.memmap('dataset/train.bin', dtype=np.uint16, mode='r')
-val_data = np.memmap('dataset/val.bin', dtype=np.uint16, mode='r')
+train_data = np.memmap('dataset/processed/train.bin', dtype=np.uint16, mode='r')
+val_data = np.memmap('dataset/processed/val.bin', dtype=np.uint16, mode='r')
 
 def get_batch(split):
     data = train_data if split == 'train' else val_data
@@ -81,13 +75,7 @@ def generate_example(prompt="A mysterious murder shocks the town when ", max_new
 # -------------------------
 # Model
 # -------------------------
-config = GPT.get_default_config()
-config.vocab_size = vocab_size
-config.block_size = block_size
-config.n_layer = n_layer
-config.n_head = n_head
-config.n_embd = n_embd
-config.model_type = None
+config = get_model_config(vocab_size)
 
 model = GPT(config).to(device)
 
@@ -95,19 +83,18 @@ model = GPT(config).to(device)
 # Model info
 # -------------------------
 total_params = sum(p.numel() for p in model.parameters())
-trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print(f"Pokretanje treniranja na: {device.upper()}")
-print(f"Model parametri: {total_params:,} (trenabilni: {trainable_params:,})")
+print(f"Model parametri: {total_params:,}")
 print(f"Ukupno iteracija: {max_iters:,}")
 
 # -------------------------
-# Optimizator i scheduler - GPT-2 style
+# Optimizator i scheduler
 # -------------------------
 # AdamW s weight decay i warmup
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, betas=(0.9, 0.95), weight_decay=0.1)
 
 # Warmup scheduler za stabilno treniranje
-warmup_steps = 500
+warmup_steps = WARMUP_STEPS
 def get_lr(iter):
     if iter < warmup_steps:
         return learning_rate * iter / warmup_steps
@@ -128,21 +115,25 @@ for iter in range(max_iters):
         print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         generate_example()
 
-    # Gradient accumulation za veći efektivni batch
+    # Gradient accumulation
+    # Akumuliranje gradijenata kroz više micro-batch-eva
+    # Ovo omogućava veći efektivni batch size bez povećanja potrošnje GPU memorije
+    # Za svaku iteraciju, gradijenti se racunaju 4 puta i akumuliraju
+    # Na kraju svakog micro-batch-a, gradijenti se akumuliraju i ažuriraju optimizator
+
     loss_accum = 0.0
     optimizer.zero_grad(set_to_none=True)
-    
+
     for micro_step in range(gradient_accumulation_steps):
         xb, yb = get_batch('train')
         
         with autocast(device):
             logits, loss = model(xb, yb)
-            loss = loss / gradient_accumulation_steps  # Scale loss
-            
+            loss = loss / gradient_accumulation_steps  # Normalizacija gubitka
+
         loss_accum += loss.item()
         scaler.scale(loss).backward()
 
-    # Optimizator korak nakon svih micro-batch-eva
     scaler.unscale_(optimizer)
     clip_grad_norm_(model.parameters(), max_grad_norm)
     scaler.step(optimizer)
@@ -157,13 +148,14 @@ for iter in range(max_iters):
         print(f"step {iter} | loss: {loss_accum:.4f} | lr: {get_lr(iter):.6f} | time: {dt:.2f}s")
 
 # -------------------------
-# Spremi checkpoint
+# Spremanje checkpointa
 # -------------------------
+os.makedirs('models', exist_ok=True)
 torch.save({
     'model_state_dict': model.state_dict(),
     'optimizer_state_dict': optimizer.state_dict(),
     'config': config,
     'step': max_iters
-}, 'checkpoint.pt')
+}, 'models/checkpoint.pt')
 
 print("Model spremljen kao checkpoint.pt")

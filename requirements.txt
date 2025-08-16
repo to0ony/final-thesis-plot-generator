@@ -3,7 +3,7 @@ torch>=2.0.0
 numpy>=1.21.0
 tiktoken>=0.4.0
 
-# Optional - for loading pretrained models from HuggingFace
+# Optional
 transformers>=4.20.0
 
 # Development dependencies

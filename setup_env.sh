@@ -15,8 +15,6 @@ pip install -r requirements.txt
 
 echo ""
 echo "Environment setup complete!"
-echo "To activate the environment in the future, run:"
+echo "To activate the environment, run:"
 echo "source plot-generator-env/bin/activate"
 echo ""
-echo "To start training, run:"
-echo "python train.py"

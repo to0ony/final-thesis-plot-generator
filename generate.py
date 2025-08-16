@@ -1,14 +1,16 @@
 import torch
 import tiktoken
 from mingpt.model import GPT
+from config import get_model_config
 
 # -------------------------
 # Setup
 # -------------------------
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print (torch.cuda.get_device_name(0)) if device == 'cuda' else print("GPU nije dostupan - koristi se CPU")
 
 # -------------------------
-# Tokenizer (tiktoken GPT-2)
+# Tokenizer
 # -------------------------
 enc = tiktoken.get_encoding("gpt2")
 vocab_size = enc.n_vocab
@@ -20,21 +22,15 @@ def decode(l):
     return enc.decode(l)
 
 # -------------------------
-# Konfiguracija modela (mora biti ista kao u train.py)
+# Konfiguracija modela
 # -------------------------
-config = GPT.get_default_config()
-config.vocab_size = vocab_size
-config.block_size = 256        
-config.n_layer = 12             
-config.n_head = 12              
-config.n_embd = 768             
-config.model_type = None
+config = get_model_config(vocab_size)
 
 # -------------------------
 # Inicijalizacija modela
 # -------------------------
 model = GPT(config)
-checkpoint = torch.load('checkpoint.pt', map_location=device, weights_only=False)
+checkpoint = torch.load('models/checkpoint.pt', map_location=device, weights_only=False)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.to(device)
 model.eval()
@@ -43,7 +39,7 @@ model.eval()
 # Prompt i generacija
 # -------------------------
 prompts = [
-    "Film"
+    "The movie begins with a soldier who is abandoned from his unit"
 ]
 
 for i, prompt in enumerate(prompts, 1):
@@ -58,3 +54,5 @@ for i, prompt in enumerate(prompts, 1):
     generated = decode(y[0].tolist())
     print(f" STORY: {generated}")
     print("=" * 80)
+
+torch.cuda.empty_cache()
