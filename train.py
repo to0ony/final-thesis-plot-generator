@@ -4,6 +4,7 @@ import time
 import math
 import torch
 import numpy as np
+import csv
 from torch.nn.utils import clip_grad_norm_
 from torch.amp import autocast, GradScaler
 from mingpt.model import GPT
@@ -88,7 +89,7 @@ print(f"Model parametri: {total_params:,}")
 print(f"Ukupno iteracija: {max_iters:,}")
 
 # -------------------------
-# Optimizator i scheduler
+# Optimizator i warmup scheduler
 # -------------------------
 # AdamW s weight decay i warmup
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, betas=(0.9, 0.95), weight_decay=0.1)
@@ -105,57 +106,71 @@ def get_lr(iter):
 scaler = GradScaler(device)
 
 # -------------------------
-# Trening s gradient accumulation
+# Trening 
 # -------------------------
-for iter in range(max_iters):
-    t0 = time.time()
 
-    if iter % eval_interval == 0:
-        losses = estimate_loss()
-        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-        generate_example()
-
-    # Gradient accumulation
-    # Akumuliranje gradijenata kroz više micro-batch-eva
-    # Ovo omogućava veći efektivni batch size bez povećanja potrošnje GPU memorije
-    # Za svaku iteraciju, gradijenti se racunaju 4 puta i akumuliraju
-    # Na kraju svakog micro-batch-a, gradijenti se akumuliraju i ažuriraju optimizator
-
-    loss_accum = 0.0
-    optimizer.zero_grad(set_to_none=True)
-
-    for micro_step in range(gradient_accumulation_steps):
-        xb, yb = get_batch('train')
-        
-        with autocast(device):
-            logits, loss = model(xb, yb)
-            loss = loss / gradient_accumulation_steps  # Normalizacija gubitka
-
-        loss_accum += loss.item()
-        scaler.scale(loss).backward()
-
-    scaler.unscale_(optimizer)
-    clip_grad_norm_(model.parameters(), max_grad_norm)
-    scaler.step(optimizer)
-    scaler.update()
-    
-    # Ažuriraj learning rate
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = get_lr(iter)
-
-    dt = time.time() - t0
-    if iter % 100 == 0:
-        print(f"step {iter} | loss: {loss_accum:.4f} | lr: {get_lr(iter):.6f} | time: {dt:.2f}s")
-
-# -------------------------
-# Spremanje checkpointa
-# -------------------------
 os.makedirs('models', exist_ok=True)
-torch.save({
-    'model_state_dict': model.state_dict(),
-    'optimizer_state_dict': optimizer.state_dict(),
-    'config': config,
-    'step': max_iters
-}, 'models/checkpoint.pt')
+log_path = os.path.join('models', 'loss_log.csv')
 
-print("Model spremljen kao checkpoint.pt")
+if not os.path.exists(log_path):
+    with open(log_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['iter', 'train_loss', 'val_loss'])
+
+checkpoint_counter = 1
+try:
+    for iter in range(max_iters):
+        t0 = time.time()
+
+        if iter % eval_interval == 0:
+            losses = estimate_loss()
+            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+            generate_example()
+            # Log loss u CSV
+            with open(log_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([iter, float(losses['train']), float(losses['val'])])
+            if iter != 0:
+                checkpoint_path = f"models/checkpoint-{checkpoint_counter}.pt"
+                torch.save({
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'config': config,
+                    'step': iter
+                }, checkpoint_path)
+                print(f"Checkpoint spremljen: {checkpoint_path}")
+                checkpoint_counter += 1
+
+        # Gradient accumulation
+        loss_accum = 0.0
+        optimizer.zero_grad(set_to_none=True)
+
+        for micro_step in range(gradient_accumulation_steps):
+            xb, yb = get_batch('train')
+            with autocast(device):
+                logits, loss = model(xb, yb)
+                loss = loss / gradient_accumulation_steps
+            loss_accum += loss.item()
+            scaler.scale(loss).backward()
+
+        scaler.unscale_(optimizer)
+        clip_grad_norm_(model.parameters(), max_grad_norm)
+        scaler.step(optimizer)
+        scaler.update()
+        # Ažuriraj learning rate
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = get_lr(iter)
+
+        dt = time.time() - t0
+        if iter % 100 == 0:
+            print(f"step {iter} | loss: {loss_accum:.4f} | lr: {get_lr(iter):.6f} | time: {dt:.2f}s")
+
+except KeyboardInterrupt:
+    last_ckpt = "models/checkpoint-last.pt"
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'config': config,
+        'step': iter
+    }, last_ckpt)
+    print(f"\nTrening prekinut. Model spremljen kao {last_ckpt}")
