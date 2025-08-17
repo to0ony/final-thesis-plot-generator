@@ -20,9 +20,7 @@ Ovaj repozitorij sadrži pipeline za trening GPT‑stila jezičnog modela (minG
 
 [Dataset 1 - Wikipedia plots](https://drive.google.com/file/d/12PyNYAi1nrH07b-K0E4AKAt2A2sFh3ON/view?usp=drive_link)
 
-[Dataset 2 - moviespoiler-full-plots scrapped](https://drive.google.com/file/d/1QiWSaRpE3wbtS8tdEnsrFDGyPC2s5wMT/view?usp=drive_link)
-
-[Dataset 3 - moviespoiler-mini-plots scrapped](https://drive.google.com/file/d/1gKdgdjJHyeXRTKaLz7XE5BrjH7DhOwkK/view?usp=drive_link)
+[Dataset 2 - moviespoiler-plots scrapped](https://drive.google.com/file/d/1QiWSaRpE3wbtS8tdEnsrFDGyPC2s5wMT/view?usp=drive_link)
 
 Dataset je tekstualna kolekcija plotova filmova. Da bi model mogao "čitati" ove plotove, potrebno je dati dataset preoblikovati. Dataset preoblikujemo tako što pretvaramo tekst u niz brojeva - tj. tokeniziramo tekst. Trivijalna tokenizacija bi se radila tako što bismo svaki karakter mapirali na jedinstveni broj. Radi bolje kvalitete modela - odlučio sam se na uporabu `tiktoken` tokenizatora koji koristi BPE (Byte Pair Encoding). BPE (Byte Pair Encoding) omogućava modelu da prepoznaje česte podriječi čime model tijekom treniranja više puta vidi iste tokene u različitim kontekstimaa što mu pomaže da bolje generalizira i razumije gramatička pravila jezika.
 
