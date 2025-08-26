@@ -30,7 +30,7 @@ config = get_model_config(vocab_size)
 # Inicijalizacija modela
 # -------------------------
 model = GPT(config)
-checkpoint = torch.load('models/checkpoint.pt', map_location=device, weights_only=False)
+checkpoint = torch.load('models/cmu_plots_checkpoint.pt', map_location=device, weights_only=False)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.to(device)
 model.eval()
@@ -39,7 +39,7 @@ model.eval()
 # Prompt i generacija
 # -------------------------
 prompts = [
-    "The movie begins with a soldier who is abandoned from his unit"
+    "A little young boy manages to enter TV as portal"
 ]
 
 for i, prompt in enumerate(prompts, 1):
