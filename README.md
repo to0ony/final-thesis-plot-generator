@@ -2,25 +2,29 @@
 
 Studenti trebaju odabrati temu za koju će neuronska mreža ili veliki jezični model generirati sadržaj.
 
-## Uvod
-
-Ovaj repozitorij sadrži pipeline za trening GPT‑stila jezičnog modela (minGPT) na užem domenskom skupu podataka — zbirci plotova filmova. Cilj je da model generira imaginarne plotove filmova. README daje tehnički pregled: priprema skupa podataka, tokenizacija, arhitektura modela i hiperparametri, detalji treninga (optimizer, scheduler, AMP, gradient accumulation) i način generacije pomoću istreniranog checkpointa.
-
-## Struktura važnih datoteka
+# Struktura
 - `prepare.ipynb` — notebook za preprocesiranje raw podataka u binarni token niz
 - `dataset/plot.txt` — (izvorni) tekst plotova
 - `dataset/processed/train.bin`, `dataset/processed/val.bin` — izlaz tokenizacije, spremljeni kao uint16 memmap za brzo dohvaćanje batcheva
 - `config.py` — glavni set hiperparametara modela i treniranja
-- `train.py` — training loop (memmap input, AMP, grad accum, checkpointing)
+- `train.py` — training loop (učitavanje data/processed datoteka, treniranje)
 - `generate.py` — skripta za generaciju promptova
-- `mingpt/` — minimalna implementacija GPT modela([minGPT](https://github.com/karpathy/minGPT))
-- `requirements.txt` — Python paketi
+- `mingpt/` — implementacija GPT modela([minGPT](https://github.com/karpathy/minGPT))
+- `requirements.txt` — nužni Python paketi
+
+# Postupak pokretanja
+
+Postaviti virtualno okruženje i instalirati potrebne pakete iz `requirements.txt`.
+U datasetu premjestiti jedan od datasetova na kojem će se trenirati model.
+Pokrenuti `prepare.ipynb` za tokenizaciju teksta.
+Zatim pokrenuti `train.py` za treniranje modela.
+Kada treniranje završi, pokrenuti `generate.py` gdje se učitava checkpoint (`models/checkpoint.pt`) i generiraju promptovi.
 
 # Dataset i preprocessing (prepare.ipynb)
 
-[Dataset 1 - Wikipedia plots](https://drive.google.com/file/d/12PyNYAi1nrH07b-K0E4AKAt2A2sFh3ON/view?usp=drive_link)
+[Dataset 1 - cmu-plots](https://drive.google.com/file/d/12PyNYAi1nrH07b-K0E4AKAt2A2sFh3ON/view?usp=drive_link)
 
-[Dataset 2 - moviespoiler-plots scrapped](https://drive.google.com/file/d/1QiWSaRpE3wbtS8tdEnsrFDGyPC2s5wMT/view?usp=drive_link)
+[Dataset 2 - movieSpoiler-plots](https://drive.google.com/file/d/1QiWSaRpE3wbtS8tdEnsrFDGyPC2s5wMT/view?usp=drive_link)
 
 Dataset je tekstualna kolekcija plotova filmova. Da bi model mogao "čitati" ove plotove, potrebno je dati dataset preoblikovati. Dataset preoblikujemo tako što pretvaramo tekst u niz brojeva - tj. tokeniziramo tekst. Trivijalna tokenizacija bi se radila tako što bismo svaki karakter mapirali na jedinstveni broj. Radi bolje kvalitete modela - odlučio sam se na uporabu `tiktoken` tokenizatora koji koristi BPE (Byte Pair Encoding). BPE (Byte Pair Encoding) omogućava modelu da prepoznaje česte podriječi čime model tijekom treniranja više puta vidi iste tokene u različitim kontekstimaa što mu pomaže da bolje generalizira i razumije gramatička pravila jezika.
 
@@ -41,41 +45,31 @@ pip install -r requirements.txt
 
 Nakon toga stvaraju se `dataset/processed/train.bin` i `dataset/processed/val.bin`.
 
-# Treniranje `train.py`
-
-Sažetak toka:
-- Učitaje se `train.bin` i `val.bin` kao numpy memmap.
-- Warmup faza se koristi za postupno povećanje learning rate-a tijekom prvih `WARMUP_STEPS` iteracija jer doprinosi stabilnijem treniranju, to jest model neće u početku prebrzo učiti (mijenjati težine drastično). Nakon toga se koristi [cosine annealing](https://docs.pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.CosineAnnealingLR.html) do kraja treninga.
-- Model se trenira koristeći [AdamW optimizator](https://www.datacamp.com/tutorial/adamw-optimizer-in-pytorch) s weight decay i betas (0.9, 0.95).
-- Sekvence se uzimaju iz memmapa i šalju u model za treniranje.
-- Gradijent se akumulira tijekom `GRADIENT_ACCUMULATION_STEPS` koraka. (Implementirao radi efikasnosti memorije na GPU-u)
-- Nakon akumulacije vrši se clipping gradijenta (`clip_grad_norm_`) i optimizatorski korak.
-- Model se trenira koristeći mixed precision (AMP) i `torch.cuda.amp.GradScaler` za stabilno treniranje na GPU‑u.
-- Svakih `EVAL_INTERVAL` iteracija poziva se `estimate_loss()` (prosjek `EVAL_ITERS` batcheva na train i val setu) i poziva se kratka generacija demo‑primjera.
-- Na kraju treniranja sprema se checkpoint:
-
-# Generacija: `generate.py`
+# Generiranje promptova: `generate.py`
 
 - Učitava tokenizer (tiktoken) i model konfiguraciju.
 - Učitava checkpoint (`models/checkpoint.pt` i stavlja model u `eval()` režim.
 - Primjeri promptova su u listi `prompts`.
 - Generacija se radi preko `model.generate(...)` s parametrima:
 	- `max_new_tokens` (npr. 200) - 
-	- `temperature` (npr. 0.7) - 
-	- `do_sample=True` ili `False` - 
-	- `top_k` (npr. 50) - 
+	- `temperature` (npr. 0.7) - kontrolira kreativnost generiranog teksta (viša temperatura = kreativniji tekst)
+	- `do_sample=True` ili `False` - određuje hoće li se koristiti uzorkovanje ili ne (True = uzorkovanje, False = deterministički izlaz)
+	- `top_k` (npr. 50) - broj najvjerojatnijih tokena koji se uzimaju u obzir pri generiranju
 
-# Postupak pokretanja
+# Treniranja
+## 1. Treniranje
+*Modeli su trenirani na NVIDIA GEFORCE RTX 4060 Ti 8GB grafickoj kartici.*
 
-Postaviti virtualno okruženje i instalirati potrebne pakete iz `requirements.txt`.
-U datasetu premjestiti jedan od datasetova na kojem će se trenirati model.
-Pokrenuti `prepare.ipynb` za tokenizaciju teksta.
-Zatim pokrenuti `train.py` za treniranje modela.
-Kada treniranje završi, pokrenuti `generate.py` gdje se učitava checkpoint (`models/checkpoint.pt`) i generiraju promptovi.
-
-# Moja treniranja
-
-**GPU : NVIDIA GeForce RTX 4060 Ti 8GB**
+Sažetak toka:
+- Učitao sam `train.bin` i `val.bin` kao numpy memmap.
+- Warmup faza se koristi za postupno povećanje learning rate-a tijekom prvih `WARMUP_STEPS` iteracija jer doprinosi stabilnijem treniranju, to jest model neće u početku prebrzo učiti (mijenjati težine drastično). Nakon toga se koristi [cosine annealing](https://docs.pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.CosineAnnealingLR.html) do kraja treninga.
+- Model se trenira koristeći [AdamW optimizator](https://www.datacamp.com/tutorial/adamw-optimizer-in-pytorch) s weight decay i betas (0.9, 0.95).
+- Sekvence se uzimaju iz memmapa i šalju u model za treniranje.
+- Gradijent se akumulira tijekom `GRADIENT_ACCUMULATION_STEPS` koraka. (Implementirano radi efikasnosti memorije na GPU-u)
+- Nakon akumulacije vrši se clipping gradijenta (`clip_grad_norm_`) i optimizatorski korak.
+- Model se trenira koristeći mixed precision (AMP) i `torch.cuda.amp.GradScaler` za stabilno treniranje na GPU‑u.
+- Svakih `EVAL_INTERVAL` iteracija poziva se `estimate_loss()` (prosjek `EVAL_ITERS` batcheva na train i val setu) i poziva se kratka generacija demo‑primjera.
+- Na kraju treniranja sprema se checkpoint
 
 Prvo sam trenirao model na Wikipedia datasetu (72MB). Treniranje je trajalo 15 sati.
 Koristio sam sljedeći config:
@@ -146,3 +140,9 @@ money. The woman is none other than the
 old woman and she tells him to hide
 her body in the old man's room.
 ```
+
+Za prvi pokušaj treniranja modela, bio sam dosta zadovoljan jer sam dobivao donekle smislene plotove. Rečenice su gramatički većinom ispravne i imaju smisla. Po plotovima koje generira, vidi se da može ostati u stilu onoga što je u promptu bilo napisano (misterija, drama, komedija...). Ono čime nisam zadovoljan bio jest da priče i dalje djeluju malo nelogične, radnje često postaju besmislene i nemaju vezu s onime što je model početno generirao.
+
+## 2. Treniranje
+
+Dodao sam [TensorBoard](https://www.tensorflow.org/tensorboard) da bih imao bolji uvid u kretanje train i validation lossa, learning rate...

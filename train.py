@@ -1,6 +1,7 @@
 import os
 import pickle
 import time
+import datetime
 import math
 import torch
 import numpy as np
@@ -10,6 +11,17 @@ from torch.amp import autocast, GradScaler
 from mingpt.model import GPT
 import tiktoken
 from config import *
+from torch.utils.tensorboard import SummaryWriter
+
+
+# -------------------------
+# TensorBoard
+# -------------------------
+
+run_name = datetime.datetime.now().strftime("run_%Y%m%d_%H%M%S")
+tb_dir = os.path.join('runs', run_name)
+tb_writer = SummaryWriter(tb_dir)
+print(f"TensorBoard logging: {tb_dir}")
 
 # -------------------------
 # Hiperparametri 
@@ -60,7 +72,7 @@ def estimate_loss():
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
-            with autocast(device):
+            with autocast(device_type=device):
                 _, loss = model(X, Y)
             losses[k] = loss.item()
         out[split] = losses.mean()
@@ -68,16 +80,15 @@ def estimate_loss():
     return out
 
 @torch.no_grad()
-def generate_example(prompt="A mysterious murder shocks the town when ", max_new_tokens=100):
+def generate_example(prompt="A mysterious murder shocks the town when ", max_new_tokens=150):
     context = torch.tensor([encode(prompt)], dtype=torch.long).to(device)
     generated = model.generate(context, max_new_tokens=max_new_tokens)
-    print("\n[GENERATED SAMPLE]\n" + decode(generated[0].tolist()) + "\n")
+    return decode(generated[0].tolist())
 
 # -------------------------
 # Model
 # -------------------------
 config = get_model_config(vocab_size)
-
 model = GPT(config).to(device)
 
 # -------------------------
@@ -87,6 +98,17 @@ total_params = sum(p.numel() for p in model.parameters())
 print(f"Pokretanje treniranja na: {device.upper()}")
 print(f"Model parametri: {total_params:,}")
 print(f"Ukupno iteracija: {max_iters:,}")
+
+tb_writer.add_text("run/meta", f"device: {device}, params: {total_params:,}, block_size: {block_size}, "
+                               f"batch_size: {batch_size}, grad_accum: {gradient_accumulation_steps}, "
+                               f"lr: {learning_rate}, warmup: {WARMUP_STEPS}")
+
+# Log additional metadata
+metadata = f"eval_interval: {eval_interval}, eval_iters: {eval_iters}, max_grad_norm: {max_grad_norm}"
+tb_writer.add_text("run/extended_meta", metadata)
+
+# Log model architecture
+tb_writer.add_text("run/model_architecture", str(model))
 
 # -------------------------
 # Optimizator i warmup scheduler
@@ -109,15 +131,19 @@ scaler = GradScaler(device)
 # Trening 
 # -------------------------
 
-os.makedirs('models', exist_ok=True)
-log_path = os.path.join('models', 'loss_log.csv')
+# Early stopping parameters
+patience = 5  # Number of evaluations to wait for improvement
+best_val_loss = float('inf')
+no_improvement_count = 0
 
-if not os.path.exists(log_path):
-    with open(log_path, 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['iter', 'train_loss', 'val_loss'])
+# Retention policy: Save only the best-performing checkpoint
+best_checkpoint_path = None
 
-checkpoint_counter = 1
+# Retention policy: Keep only the last three checkpoints
+checkpoint_paths = []
+
+os.makedirs('models/checkpoints', exist_ok=True)
+
 try:
     for iter in range(max_iters):
         t0 = time.time()
@@ -125,13 +151,23 @@ try:
         if iter % eval_interval == 0:
             losses = estimate_loss()
             print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
-            generate_example()
-            # Log loss u CSV
-            with open(log_path, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow([iter, float(losses['train']), float(losses['val'])])
+
+            # TensorBoard: losses
+            tb_writer.add_scalar("loss/train", float(losses['train']), iter)
+            tb_writer.add_scalar("loss/val", float(losses['val']), iter)
+
+            tb_writer.add_scalars("loss/overview", {
+            "train": float(losses['train']),
+            "val":   float(losses['val']),
+            }, iter)
+
+            # TensorBoard: short generated sample
+            sample_text = generate_example()
+            tb_writer.add_text("samples/generation", sample_text, iter)
+
+            # Checkpointing
             if iter != 0:
-                checkpoint_path = f"models/checkpoint-{checkpoint_counter}.pt"
+                checkpoint_path = f"models/checkpoint-{iter:05d}.pt"
                 torch.save({
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
@@ -139,7 +175,29 @@ try:
                     'step': iter
                 }, checkpoint_path)
                 print(f"Checkpoint spremljen: {checkpoint_path}")
-                checkpoint_counter += 1
+
+                # Checkpoint retention policy
+                checkpoint_paths.append(checkpoint_path)
+                if len(checkpoint_paths) > 3:
+                    oldest_checkpoint = checkpoint_paths.pop(0)
+                    if os.path.exists(oldest_checkpoint):
+                        os.remove(oldest_checkpoint)
+                        print(f"Old checkpoint removed: {oldest_checkpoint}")
+
+            # Early stopping check
+            val_loss = losses['val']
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                no_improvement_count = 0  # Reset counter if there is an improvement
+
+                best_checkpoint_path = checkpoint_path
+
+            else:
+                no_improvement_count += 1
+
+            if no_improvement_count >= patience:
+                print("Early stopping triggered. No improvement in validation loss.")
+                break
 
         # Gradient accumulation
         loss_accum = 0.0
@@ -147,7 +205,7 @@ try:
 
         for micro_step in range(gradient_accumulation_steps):
             xb, yb = get_batch('train')
-            with autocast(device):
+            with autocast(device_type=device):
                 logits, loss = model(xb, yb)
                 loss = loss / gradient_accumulation_steps
             loss_accum += loss.item()
@@ -157,11 +215,25 @@ try:
         clip_grad_norm_(model.parameters(), max_grad_norm)
         scaler.step(optimizer)
         scaler.update()
-        # Ažuriraj learning rate
+
+        # Update learning rate
+        current_lr = get_lr(iter)
         for param_group in optimizer.param_groups:
             param_group['lr'] = get_lr(iter)
+        tb_writer.add_scalar("lr", current_lr, iter)
+
+        # Log gradients of model parameters
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                tb_writer.add_histogram(f"gradients/{name}", param.grad, iter)
+
+        # Log model weights
+        for name, param in model.named_parameters():
+            tb_writer.add_histogram(f"weights/{name}", param, iter)
 
         dt = time.time() - t0
+        # Log training time
+        tb_writer.add_scalar("time/iteration", dt, iter)
         if iter % 100 == 0:
             print(f"step {iter} | loss: {loss_accum:.4f} | lr: {get_lr(iter):.6f} | time: {dt:.2f}s")
 
@@ -174,3 +246,9 @@ except KeyboardInterrupt:
         'step': iter
     }, last_ckpt)
     print(f"\nTrening prekinut. Model spremljen kao {last_ckpt}")
+    tb_writer.close()
+else:
+    tb_writer.close()
+
+if best_checkpoint_path is not None:
+    print(f"Najbolji checkpoint spremljen kao: {best_checkpoint_path}")
