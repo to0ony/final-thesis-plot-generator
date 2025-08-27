@@ -166,6 +166,8 @@ try:
             tb_writer.add_text("samples/generation", sample_text, iter)
 
             # Checkpointing
+            checkpoint_path = None  # Initialize checkpoint_path to avoid NameError
+
             if iter != 0:
                 checkpoint_path = f"models/checkpoint-{iter:05d}.pt"
                 torch.save({
