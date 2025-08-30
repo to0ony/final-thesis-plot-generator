@@ -1,8 +1,9 @@
-# Treniranje LLM (Large Language Model) mreže na malom računalu na užem problemu/domeni #
+# Treniranje LLM (Large Language Model) mreže na malom računalu na užem problemu/domeni
 
 Studenti trebaju odabrati temu za koju će neuronska mreža ili veliki jezični model generirati sadržaj.
 
 # Struktura
+
 - `prepare.ipynb` — notebook za preprocesiranje raw podataka u binarni token niz
 - `dataset/plot.txt` — (izvorni) tekst plotova
 - `dataset/processed/train.bin`, `dataset/processed/val.bin` — izlaz tokenizacije, spremljeni kao uint16 memmap za brzo dohvaćanje batcheva
@@ -38,7 +39,7 @@ pip install -r requirements.txt
 
 # u dataset folder premjesti jedan od datasetova na kojem ćeš trenirati model
 
-# uz prepare.ipynb ćeš tokenizirati tekst 
+# uz prepare.ipynb ćeš tokenizirati tekst
 
 #train.bin i val.bin su tip uint16 memmap datoteke koje omogućuju brzo učitavanje tj. uzimanje batcheva tijekom treniranja
 ```
@@ -51,16 +52,19 @@ Nakon toga stvaraju se `dataset/processed/train.bin` i `dataset/processed/val.bi
 - Učitava checkpoint (`models/checkpoint.pt` i stavlja model u `eval()` režim.
 - Primjeri promptova su u listi `prompts`.
 - Generacija se radi preko `model.generate(...)` s parametrima:
-	- `max_new_tokens` (npr. 200) - 
-	- `temperature` (npr. 0.7) - kontrolira kreativnost generiranog teksta (viša temperatura = kreativniji tekst)
-	- `do_sample=True` ili `False` - određuje hoće li se koristiti uzorkovanje ili ne (True = uzorkovanje, False = deterministički izlaz)
-	- `top_k` (npr. 50) - broj najvjerojatnijih tokena koji se uzimaju u obzir pri generiranju
+  - `max_new_tokens` (npr. 200) -
+  - `temperature` (npr. 0.7) - kontrolira kreativnost generiranog teksta (viša temperatura = kreativniji tekst)
+  - `do_sample=True` ili `False` - određuje hoće li se koristiti uzorkovanje ili ne (True = uzorkovanje, False = deterministički izlaz)
+  - `top_k` (npr. 50) - broj najvjerojatnijih tokena koji se uzimaju u obzir pri generiranju
 
 # Treniranja
+
 ## 1. Treniranje
-*Modeli su trenirani na NVIDIA GEFORCE RTX 4060 Ti 8GB grafickoj kartici.*
+
+_Modeli su trenirani na NVIDIA GEFORCE RTX 4060 Ti 8GB grafickoj kartici._
 
 Sažetak toka:
+
 - Učitao sam `train.bin` i `val.bin` kao numpy memmap.
 - Warmup faza se koristi za postupno povećanje learning rate-a tijekom prvih `WARMUP_STEPS` iteracija jer doprinosi stabilnijem treniranju, to jest model neće u početku prebrzo učiti (mijenjati težine drastično). Nakon toga se koristi [cosine annealing](https://docs.pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.CosineAnnealingLR.html) do kraja treninga.
 - Model se trenira koristeći [AdamW optimizator](https://www.datacamp.com/tutorial/adamw-optimizer-in-pytorch) s weight decay i betas (0.9, 0.95).
@@ -93,7 +97,7 @@ MAX_GRAD_NORM = 1.0
 WARMUP_STEPS = 500
 ```
 
-Model je zauzeo oko 7.8 GB VRAM-a tijekom treniranja. Do 3000 iteracija, demo promptovi bili su dosta repetitivni. 
+Model je zauzeo oko 7.8 GB VRAM-a tijekom treniranja. Do 3000 iteracija, demo promptovi bili su dosta repetitivni.
 
 ```markdown
 **step 3600: train loss 3.7761, val loss 4.1895
@@ -104,7 +108,7 @@ A mysterious murder shocks the town when the townspeople are attacked by a group
 Oko 5000-ite iteracije, promptovi su počeli pokazivati neke razumne slijedove u radnji. Manje je ponavljanja.
 
 ```markdown
-**step 5600: train loss 3.4639, val loss 4.0296 
+**step 5600: train loss 3.4639, val loss 4.0296
 **
 A mysterious murder shocks the town when a young woman is found murdered. The local police inspector is a police inspector who is also a close friend of the murdered girl. The murderer is the only witness to the murder. He is assigned to the case, but the sheriff is not convinced. He is told that the killer is actually the killer, and that the killer is actually the killer....
 ```
@@ -114,9 +118,9 @@ A mysterious murder shocks the town when a young woman is found murdered. The lo
 Primjer prompta generiranog nakon potpunog treninga:
 
 ```markdown
- PROMPT: The movie begins with a soldier who is abandoned from his unit
-------------------------------------------------------------
- STORY:
+## PROMPT: The movie begins with a soldier who is abandoned from his unit
+
+STORY:
 ...in a boat with a fisherman. The two make their way to
 a small fishing village, which is home to
 a woman who has a briefcase full of
@@ -146,3 +150,56 @@ Za prvi pokušaj treniranja modela, bio sam dosta zadovoljan jer sam dobivao don
 ## 2. Treniranje
 
 Dodao sam [TensorBoard](https://www.tensorflow.org/tensorboard) da bih imao bolji uvid u kretanje train i validation lossa, learning rate...
+
+```yaml
+# Model architecture hyperparameters
+BLOCK_SIZE = 256
+N_LAYER = 12
+N_HEAD = 12
+N_EMBD = 768
+MODEL_TYPE = None
+
+# Training hyperparameters
+BATCH_SIZE = 16
+GRADIENT_ACCUMULATION_STEPS = 4
+MAX_ITERS = 8000
+EVAL_INTERVAL = 400
+LEARNING_RATE = 1e-3
+EVAL_ITERS = 50
+MAX_GRAD_NORM = 1.0
+WARMUP_STEPS = 500
+```
+
+![TensorBoard](https://i.imgur.com/BJXJFXw.png)
+
+![Loss graph](https://i.imgur.com/BVcuQE5.png)
+![Learning rate graph](https://i.imgur.com/bfANktT.png)
+
+```markdown
+## PROMPT: A little young boy manages to enter TV as portal
+
+STORY: A little young boy manages to enter TV as portal
+is being opened. The boy is then shown as a boy and
+his mother, who tell the boy on the radio that he is
+the son of the prince. The boy is then sent to the
+city to be adopted by the prince and grows up to
+be a wealthy man. His father, who was a king,
+had abandoned his family when he was young.
+The boy's father had been a servant to the prince,
+ut the prince is ill and does not want to allow
+him to return. The prince becomes a servant and
+hen decides to send the boy to the palace.
+he next day, the prince wakes up the next
+morning to find the boy and the prince in
+bed. The prince and the prince are shocked
+and furious. The prince asks the prince
+how he got the boy for the prince and the
+boy runs home with the help of the prince
+and the prince. The prince takes the boy
+nd the prince to the palace. The prince tells
+his mother that he will meet the prince.
+```
+
+Model sam uploadao na [Hugging Face](https://huggingface.co/to0ony/final-thesis-plotgen) te uz pomoć [Gradia](https://gradio.app/) napravio web sučelje za generiranje plotova - [PlotGenApp](https://huggingface.co/spaces/to0ony/final-thesis-plotgen-app).
+
+![App](https://i.imgur.com/pfJe1ZY.png)
