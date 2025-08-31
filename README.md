@@ -202,4 +202,18 @@ his mother that he will meet the prince.
 
 Model sam uploadao na [Hugging Face](https://huggingface.co/to0ony/final-thesis-plotgen) te uz pomoć [Gradia](https://gradio.app/) napravio web sučelje za generiranje plotova - [PlotGenApp](https://huggingface.co/spaces/to0ony/final-thesis-plotgen-app).
 
-![App](https://i.imgur.com/pfJe1ZY.png)
+![App](image.png)
+
+## 3. Treniranje
+
+Model iz drugog treniranja sam uzeo i dotrenirao ga na drugom manjem datasetu. Koristio sam [movieSpoiler-plots](https://drive.google.com/file/d/1QiWSaRpE3wbtS8tdEnsrFDGyPC2s5wMT/view?usp=drive_link) dataset. Taj dataset je obogaceniji sa zavrsecima filmova pa sam time mislio postici da model nauci bolje povezivati radnju i da ima smislenije zavrsetke.
+
+![Loss](https://i.imgur.com/k4LCH6R.png)
+
+![LR](https://i.imgur.com/loF1fXM.png)
+
+```markdown
+PROMPT: Young man tries to escape forest when
+
+Young man tries to escape forest when he is attacked by a monster. After they make it to the top and find the town, the monster tries to eat his dog, T'Chadwick. After throwing away their fire breath from the monster, they begin to flee. They get into the town and get inside a tunnel as it causes the town's residents to fall into the water. The villagers make it onto the walls to rescue the dog from the monster and use it to lure it closer to the roof of the town in hopes of climbing to the monster. Two months later, T'Chadwick is still dealing with the monster and its zombie apocalypse. While T'Chadwick looks on, other survivors see the monster's corpse before it attacks. After the monster becomes a large monster, the two run across the woods to run into the woods. The monster catches T'Chadwick while T'Chadwick runs through the woods and tries to help find a way into the town.
+```
