@@ -1,33 +1,43 @@
-# Treniranje LLM (Large Language Model) mreže na malom računalu na užem problemu/domeni
+# Završni praktični projekt - Treniranje LLM (Large Language Model) mreže na užem problemu/domeni
 
-Studenti trebaju odabrati temu za koju će neuronska mreža ili veliki jezični model generirati sadržaj.
+**Naziv projekta:** PlotGen - Generiranje sinopsisa filmova  
+**Opis projekta:** Treniranje GPT modela na datasetu koji sadrži sinopsise (plotove) filmova. Model nakon treniranja može generirati nove sinopsise.
 
-# Struktura
+# Struktura projekta
 
 - `prepare.ipynb` — notebook za preprocesiranje raw podataka u binarni token niz
-- `dataset/plot.txt` — (izvorni) tekst plotova
+- `dataset/` — folder sa datasetovima
 - `dataset/processed/train.bin`, `dataset/processed/val.bin` — izlaz tokenizacije, spremljeni kao uint16 memmap za brzo dohvaćanje batcheva
 - `config.py` — glavni set hiperparametara modela i treniranja
-- `train.py` — training loop (učitavanje data/processed datoteka, treniranje)
+- `train.py` — training loop (učitavanje data/processed datoteka i treniranje)
 - `generate.py` — skripta za generaciju promptova
 - `mingpt/` — implementacija GPT modela([minGPT](https://github.com/karpathy/minGPT))
-- `requirements.txt` — nužni Python paketi
+- `requirements.txt` — Python paketi
 
 # Postupak pokretanja
 
 Postaviti virtualno okruženje i instalirati potrebne pakete iz `requirements.txt`.
-U datasetu premjestiti jedan od datasetova na kojem će se trenirati model.
-Pokrenuti `prepare.ipynb` za tokenizaciju teksta.
-Zatim pokrenuti `train.py` za treniranje modela.
-Kada treniranje završi, pokrenuti `generate.py` gdje se učitava checkpoint (`models/checkpoint.pt`) i generiraju promptovi.
+U `/dataset` folder premjestiti dataset na kojem ce se trenirati model.
+Pokrenuti `prepare.ipynb` za obradu i tokenizaciju dataseta. 
+Zatim se moze pokrenuti treniranje modela uz `/train.py`.
+U `train.py` implementirano je periodicno generiranje promptova tijekom treniranja radi praćenja napretka modela.
+Da bi se pratili generirani promptovi, kao i loss modela, treba pokrenuti TensorBoard uz komandu:
+```python
+tensorboard --logdir runs --port 6006 --load_fast=false
+```
+Kada treniranje završi, uz `generate.py` gdje se učitaje checkpoint (`models/_nazivCheckpointa_.pt`) mogu se generirati promptovi.
 
 # Dataset i preprocessing (prepare.ipynb)
 
-[Dataset 1 - cmu-plots](https://drive.google.com/file/d/12PyNYAi1nrH07b-K0E4AKAt2A2sFh3ON/view?usp=drive_link)
+Izvori datasetova:  
+[CMU Movie Summary Corpus (cmu-plots)]([https://](https://www.cs.cmu.edu/~ark/personas/)),   
+[themoviespoiler.com (movieSpoiler-plots)](https://themoviespoiler.com/)
 
+Linkovi za preuzimanje:  
+[Dataset 1 - cmu-plots](https://drive.google.com/file/d/12PyNYAi1nrH07b-K0E4AKAt2A2sFh3ON/view?usp=drive_link)   
 [Dataset 2 - movieSpoiler-plots](https://drive.google.com/file/d/1QiWSaRpE3wbtS8tdEnsrFDGyPC2s5wMT/view?usp=drive_link)
 
-Dataset je tekstualna kolekcija plotova filmova. Da bi model mogao "čitati" ove plotove, potrebno je dati dataset preoblikovati. Dataset preoblikujemo tako što pretvaramo tekst u niz brojeva - tj. tokeniziramo tekst. Trivijalna tokenizacija bi se radila tako što bismo svaki karakter mapirali na jedinstveni broj. Radi bolje kvalitete modela - odlučio sam se na uporabu `tiktoken` tokenizatora koji koristi BPE (Byte Pair Encoding). BPE (Byte Pair Encoding) omogućava modelu da prepoznaje česte podriječi čime model tijekom treniranja više puta vidi iste tokene u različitim kontekstimaa što mu pomaže da bolje generalizira i razumije gramatička pravila jezika.
+Dataset je tekstualna kolekcija plotova filmova. Da bi model mogao "čitati" ove plotove, potrebno je dati dataset preoblikovati tako što pretvaramo tekst u niz brojeva - tj. tokeniziramo tekst. Trivijalna tokenizacija bi se radila tako što bismo svaki karakter mapirali na jedinstveni broj. Radi bolje kvalitete modela - odlučio sam se na uporabu `tiktoken` tokenizatora koji koristi BPE (Byte Pair Encoding). BPE (Byte Pair Encoding) omogućava modelu da prepoznaje česte podriječi čime model tijekom treniranja više puta vidi iste tokene u različitim kontekstima što mu pomaže da bolje generalizira i razumije gramatička pravila jezika.
 
 Upute:
 
@@ -59,9 +69,13 @@ Nakon toga stvaraju se `dataset/processed/train.bin` i `dataset/processed/val.bi
 
 # Treniranja
 
-## 1. Treniranje
+## Specifikacije računala na kojem je treniran model:
 
-_Modeli su trenirani na NVIDIA GEFORCE RTX 4060 Ti 8GB grafickoj kartici._
+**CPU:** AMD Ryzen 7 5700X3D 8-Core, 16-Thread  
+**GPU:** [Palit RTX 4060 Ti StormX](https://www.techpowerup.com/gpu-specs/palit-rtx-4060-ti-stormx.b11180)  
+**RAM:** G.SKILL RipjawsV DDR4 2x8GB
+
+## 1. Treniranje
 
 Sažetak toka:
 
@@ -69,8 +83,8 @@ Sažetak toka:
 - Warmup faza se koristi za postupno povećanje learning rate-a tijekom prvih `WARMUP_STEPS` iteracija jer doprinosi stabilnijem treniranju, to jest model neće u početku prebrzo učiti (mijenjati težine drastično). Nakon toga se koristi [cosine annealing](https://docs.pytorch.org/docs/stable/generated/torch.optim.lr_scheduler.CosineAnnealingLR.html) do kraja treninga.
 - Model se trenira koristeći [AdamW optimizator](https://www.datacamp.com/tutorial/adamw-optimizer-in-pytorch) s weight decay i betas (0.9, 0.95).
 - Sekvence se uzimaju iz memmapa i šalju u model za treniranje.
-- Gradijent se akumulira tijekom `GRADIENT_ACCUMULATION_STEPS` koraka. (Implementirano radi efikasnosti memorije na GPU-u)
-- Nakon akumulacije vrši se clipping gradijenta (`clip_grad_norm_`) i optimizatorski korak.
+- Gradijent se akumulira tijekom `GRADIENT_ACCUMULATION_STEPS` koraka. (Implementirano radi bolje efikasnosti memorije na GPU-u)
+- Nakon akumulacije vrši se clipping gradijenta (`clip_grad_norm_`).
 - Model se trenira koristeći mixed precision (AMP) i `torch.cuda.amp.GradScaler` za stabilno treniranje na GPU‑u.
 - Svakih `EVAL_INTERVAL` iteracija poziva se `estimate_loss()` (prosjek `EVAL_ITERS` batcheva na train i val setu) i poziva se kratka generacija demo‑primjera.
 - Na kraju treniranja sprema se checkpoint
@@ -202,8 +216,7 @@ his mother that he will meet the prince.
 
 Model sam uploadao na [Hugging Face](https://huggingface.co/to0ony/final-thesis-plotgen) te uz pomoć [Gradia](https://gradio.app/) napravio web sučelje za generiranje plotova - [PlotGenApp](https://huggingface.co/spaces/to0ony/final-thesis-plotgen-app).
 
-![App](image.png)
-
+![Aplikacija](https://i.imgur.com/rQY778d.png)
 ## 3. Treniranje
 
 Model iz drugog treniranja sam uzeo i dotrenirao ga na drugom manjem datasetu. Koristio sam [movieSpoiler-plots](https://drive.google.com/file/d/1QiWSaRpE3wbtS8tdEnsrFDGyPC2s5wMT/view?usp=drive_link) dataset. Taj dataset je obogaceniji sa zavrsecima filmova pa sam time mislio postici da model nauci bolje povezivati radnju i da ima smislenije zavrsetke.
@@ -211,6 +224,9 @@ Model iz drugog treniranja sam uzeo i dotrenirao ga na drugom manjem datasetu. K
 ![Loss](https://i.imgur.com/k4LCH6R.png)
 
 ![LR](https://i.imgur.com/loF1fXM.png)
+
+
+Primjer prompta generiranog nakon zavrsetka fine tunea (1600 step):
 
 ```markdown
 PROMPT: Young man tries to escape forest when
