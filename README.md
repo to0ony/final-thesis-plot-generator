@@ -1,7 +1,10 @@
 # Završni praktični projekt - Treniranje LLM (Large Language Model) mreže na užem problemu/domeni
 
 **Naziv projekta:** PlotGen - Generiranje sinopsisa filmova  
-**Opis projekta:** Treniranje GPT modela na datasetu koji sadrži sinopsise (plotove) filmova. Model nakon treniranja može generirati nove sinopsise.
+**Opis projekta:** Treniranje GPT modela na datasetu koji sadrži sinopsise (plotove) filmova. Model nakon treniranja može generirati nove sinopsise.    
+
+[![Modeli](https://img.shields.io/badge/🤗%20HuggingFace-Model-blue.svg)](https://huggingface.co/to0ony/final-thesis-plotgen)
+[![Aplikacija](https://img.shields.io/badge/🤗%20HuggingFace-Space-green.svg)](https://huggingface.co/spaces/to0ony/final-thesis-plotgen-app)
 
 # Struktura projekta
 
