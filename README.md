@@ -30,7 +30,7 @@ Kada treniranje završi, uz `generate.py` gdje se učitaje checkpoint (`models/_
 # Dataset i preprocessing (prepare.ipynb)
 
 Izvori datasetova:  
-[CMU Movie Summary Corpus (cmu-plots)]([https://](https://www.cs.cmu.edu/~ark/personas/)),   
+[CMU Movie Summary Corpus (cmu-plots)](https://www.cs.cmu.edu/~ark/personas/)   
 [themoviespoiler.com (movieSpoiler-plots)](https://themoviespoiler.com/)
 
 Linkovi za preuzimanje:  
@@ -49,7 +49,7 @@ pip install -r requirements.txt
 
 # u dataset folder premjesti jedan od datasetova na kojem ćeš trenirati model
 
-# uz prepare.ipynb ćeš tokenizirati tekst
+# uz prepare.ipynb se vrsi tokenizacija teksta
 
 #train.bin i val.bin su tip uint16 memmap datoteke koje omogućuju brzo učitavanje tj. uzimanje batcheva tijekom treniranja
 ```
@@ -62,8 +62,8 @@ Nakon toga stvaraju se `dataset/processed/train.bin` i `dataset/processed/val.bi
 - Učitava checkpoint (`models/checkpoint.pt` i stavlja model u `eval()` režim.
 - Primjeri promptova su u listi `prompts`.
 - Generacija se radi preko `model.generate(...)` s parametrima:
-  - `max_new_tokens` (npr. 200) -
-  - `temperature` (npr. 0.7) - kontrolira kreativnost generiranog teksta (viša temperatura = kreativniji tekst)
+  - `max_new_tokens` (npr. 200) - maksimalni broj generiranih tokena
+  - `temperature` (npr. 0.7) - kontrolira nasumičnost / kreativnost (nize vrijednosti - model uzima one najsigurnije tokene)
   - `do_sample=True` ili `False` - određuje hoće li se koristiti uzorkovanje ili ne (True = uzorkovanje, False = deterministički izlaz)
   - `top_k` (npr. 50) - broj najvjerojatnijih tokena koji se uzimaju u obzir pri generiranju
 
